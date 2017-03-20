@@ -34,11 +34,7 @@ class Instrument(object):
 
 
 
-def swap_days(t0, maturity):
-    days = [t0]
-    while days[-1] +0.5 <= maturity:
-        days.append(days[-1] +0.5)
-    return days 
+
 
 
 
@@ -123,7 +119,13 @@ class Swap(Instrument):
         for key in self.payment_days:
             self.payments[key] = 0.5*self.rate
         self.payments[self.maturity] += 1
-        
+
+    def swap_days(t0, maturity):
+        days = [t0]
+        while days[-1] + 0.5 <= maturity:
+            days.append(days[-1] + 0.5)
+        return days
+
 
 
 
