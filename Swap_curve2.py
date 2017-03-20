@@ -9,14 +9,15 @@ from scipy.sparse import spdiags
 
 
 market = pickle.load(open('swap_market.p','rb'))
-print(market)
-er = input('__')
 
 
+
+
+#def delta(t1,t2):
+#    return t2 -t1
 
 def delta(t1,t2):
-    return t2 -t1
-
+    return (min(t2.day,30) + max(30-t1.day, 0))/360 + (t2.month - t1.month -1)/12 + t2.year - t1.year
 
 class Instrument(object):
     __metaclass__ = ABCMeta
@@ -105,7 +106,7 @@ class Swap(Instrument):
         self.name = "Swap2"
         self.maturity = maturity
         self.rate = rate
-        self.payment_days = swap_days(0.5, self.maturity)
+        self.payment_days = self.swap_days()
         self.payments = {}
         self.price = 1
 
@@ -120,15 +121,20 @@ class Swap(Instrument):
             self.payments[key] = 0.5*self.rate
         self.payments[self.maturity] += 1
 
-    def swap_days(t0, maturity):
-        days = [t0]
-        while days[-1] + 0.5 <= maturity:
-            days.append(days[-1] + 0.5)
+    def swap_days(self):
+        days = [self.maturity]
+        while days[-1] >= spotday:
+            try:
+                days.append((dt.date(days[-1].year, days[-1].month - 6, days[-1].day)))
+            except ValueError:
+                days.append((dt.date(days[-1].year-1, days[-1].month + 6, days[-1].day)))
+        days = days[:-1]
+        days.reverse()
         return days
 
 
 
-
+spotday = dt.date(2017,3,20)
 list_of_instruments = []
 for index, row in market.iterrows():
     if row['Source'] == 'LIBOR':
@@ -150,7 +156,7 @@ for index, row in market.iterrows():
 
 for inst in list_of_instruments:
     inst.setup_payments()
-spotday = 0
+
 
 
 
@@ -163,6 +169,7 @@ total = sorted(list(dates))
 
 def building_curve(instruments, times, spotday):
     T = [spotday] + times
+    print(T)
 
     C = np.zeros((len(instruments),len(times)))
     p = np.zeros(len(instruments))
@@ -201,6 +208,7 @@ def building_curve(instruments, times, spotday):
 
 def curve_building_1st_smoothness(instruments, times, spotday):
     T = [spotday] + times
+    T_t = [delta(spotday, t) for t in [spotday] + times]
     tau = T[-1]
 
     C = np.zeros((len(instruments) + 1, len(T)))
@@ -215,21 +223,21 @@ def curve_building_1st_smoothness(instruments, times, spotday):
                 C[i + 1,j] = inst.payments[T[j]]
 
     A = np.zeros((len(T), len(T)))
-    for i,t_i in enumerate(T):
-        for j,t_j in enumerate(T):
+    for i,t_i in enumerate(T_t):
+        for j,t_j in enumerate(T_t):
             A[i,j] = 1 + min(t_i, t_j)
     price = np.atleast_2d(p).T
     Z = np.dot(np.dot(C.T,np.linalg.inv(np.dot(C,np.dot(A, C.T)))),price)
 
     def _f(x):
         out = 0
-        for i,t in enumerate(T):
+        for i,t in enumerate(T_t):
             out += (1 + min(x, t))*Z[i]
         return out
 
     def _g(x):
         out = 0
-        for i,t in enumerate(T):
+        for i,t in enumerate(T_t):
             out += 1*(x<=t)*Z[i]
         return -out/_f(x)
 
@@ -237,6 +245,7 @@ def curve_building_1st_smoothness(instruments, times, spotday):
 
 def curve_building_2st_smoothness(instruments, times, spotday):
     T = [spotday] + times
+    T_t = [delta(spotday, t) for t in [spotday] + times]
     tau = T[-1]
 
     C = np.zeros((len(instruments) + 1, len(T)))
@@ -251,21 +260,22 @@ def curve_building_2st_smoothness(instruments, times, spotday):
                 C[i + 1,j] = inst.payments[T[j]]
 
     B = np.zeros((len(T), len(T)))
-    for i,t_i in enumerate(T):
-        for j,t_j in enumerate(T):
+    for i,t_i in enumerate(T_t):
+        for j,t_j in enumerate(T_t):
             B[i,j] = 1 - 1/6* min(t_i, t_j)**3 + t_i*t_j*(1 + 0.5*min(t_i, t_j))
+
     price = np.atleast_2d(p).T
     Z = np.dot(np.dot(C.T,np.linalg.inv(np.dot(C,np.dot(B, C.T)))),price)
 
     def _f(x):
         out = 0
-        for i,t in enumerate(T):
+        for i,t in enumerate(T_t):
             out += (1 - 1/6*min(x,t)**3 + t/2*min(x,t)**2 - t**2/2*min(x,t) + x*(1+t/2)*t)*Z[i]
         return out
 
     def _g(x):
         out = 0
-        for i, t in enumerate(T):
+        for i, t in enumerate(T_t):
             out += (t - 0.5*min(x,t)**2 + t*min(x,t)) * Z[i]
         return -out / _f(x)
 
@@ -277,8 +287,10 @@ def curve_building_2st_smoothness(instruments, times, spotday):
 #plt.plot(x,y, 'o')
 f1, g1 = curve_building_1st_smoothness(list_of_instruments,total,spotday)
 f2, g2 = curve_building_2st_smoothness(list_of_instruments,total,spotday)
-plt.plot(total, [g1(t) for t in total])
-plt.plot(total, [g2(t) for t in total])
+#plt.plot(total, [g1(t) for t in total])
+#plt.plot([delta(spotday, t) for t in total], [g2(t) for t in total])
+plt.plot(np.linspace(0.01,20,100), [g2(t) for t in np.linspace(0.01,20,100)])
+plt.plot(np.linspace(0.01,20,100), [g1(t) for t in np.linspace(0.01,20,100)])
 #plt.plot(total, [curve_building_1st_smoothness(list_of_instruments,total,spotday)(t) for t in total])
 plt.show()
 

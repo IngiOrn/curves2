@@ -48,3 +48,16 @@ market['Source'] = "Swap2"
 
 market.to_pickle('swap_market.p')
 
+
+def swap_days(maturity, spotday):
+    days = [maturity]
+    while days[-1] >= spotday:
+        #try:
+        days.append((dt.date(days[-1].year, days[-1].month - 6, days[-1].day)))
+        #except:
+        #    days.append((dt.date(days[-1].year - 1, days[-1].month + 6, days[-1].day)))
+    days = days[:-1]
+    days.reverse()
+    return days
+
+print(swap_days(dt.date(2019,4,5), spotday))
