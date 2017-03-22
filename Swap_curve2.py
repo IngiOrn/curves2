@@ -102,11 +102,11 @@ class SWAP(Instrument):
 
 
 class Swap(Instrument):
-    def __init__(self,maturity,rate):
+    def __init__(self,maturity,rate, spotday):
         self.name = "Swap2"
         self.maturity = maturity
         self.rate = rate
-        self.payment_days = self.swap_days()
+        self.payment_days = self.swap_days(spotday)
         self.payments = {}
         self.price = 1
 
@@ -121,7 +121,7 @@ class Swap(Instrument):
             self.payments[key] = 0.5*self.rate
         self.payments[self.maturity] += 1
 
-    def swap_days(self):
+    def swap_days(self, spotday):
         days = [self.maturity]
         while days[-1] >= spotday:
             try:
@@ -135,36 +135,31 @@ class Swap(Instrument):
 
 
 spotday = dt.date(2017,3,20)
-list_of_instruments = []
-for index, row in market.iterrows():
-    if row['Source'] == 'LIBOR':
-        instument = LIBOR(row['Maturity'].to_pydatetime().date(),row['Market Quotes']/100)
-        list_of_instruments.append(instument)
-    if row['Source'] == 'Futures':
-        instument = FRA(row['Maturity'].to_pydatetime().date(),(100-row['Market Quotes'])/100)
-        instument.set_payment_days(P[index])
-        list_of_instruments.append(instument)
-    if row['Source'] == 'Swap':
-        instument = SWAP(row['Maturity'].to_pydatetime().date(),row['Market Quotes']/100)
-        instument.set_payment_days(P[index])
-        list_of_instruments.append(instument)
-    if row['Source'] == 'Swap2':
-        instument = Swap(row['Maturity'],row['SwapRate'])
-        list_of_instruments.append(instument)
+def making_market(market, spotday):
+    list_of_instruments = []
+    for index, row in market.iterrows():
+        if row['Source'] == 'LIBOR':
+            instument = LIBOR(row['Maturity'].to_pydatetime().date(),row['Market Quotes']/100)
+            list_of_instruments.append(instument)
+        if row['Source'] == 'Futures':
+            instument = FRA(row['Maturity'].to_pydatetime().date(),(100-row['Market Quotes'])/100)
+            instument.set_payment_days(P[index])
+            list_of_instruments.append(instument)
+        if row['Source'] == 'Swap2':
+            instument = Swap(row['Maturity'],row['SwapRate'], spotday)
+            list_of_instruments.append(instument)
+
+    for inst in list_of_instruments:
+        inst.setup_payments()
 
 
+    dates = set()
+    for istru in list_of_instruments:
+        dates.update(istru.get_payment_days())
+    total = sorted(list(dates))
+    return list_of_instruments, total
 
-for inst in list_of_instruments:
-    inst.setup_payments()
-
-
-
-
-dates = set()
-for istru in list_of_instruments:
-    dates.update(istru.get_payment_days())
-total = sorted(list(dates))
-
+list_of_instruments, total = making_market(market, spotday)
 
 
 def building_curve(instruments, times, spotday):
